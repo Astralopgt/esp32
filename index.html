@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 WebSerial Interface</title>
+  <title>Upload .bin File to ESP32</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -13,51 +13,70 @@
     button {
       padding: 10px 20px;
       font-size: 16px;
+      margin: 10px;
     }
-    pre {
+    input[type="file"] {
+      margin-top: 20px;
+    }
+    #output {
       text-align: left;
       background-color: #f0f0f0;
       padding: 10px;
       border-radius: 5px;
+      margin-top: 20px;
+      min-height: 200px;
+      width: 80%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    #status {
+      font-size: 18px;
+      font-weight: bold;
+      color: green;
     }
   </style>
 </head>
 <body>
-  <h1>ESP32 WebSerial Interface</h1>
+  <h1>Upload .bin Firmware to ESP32</h1>
   <button id="connectButton">Connect to ESP32</button>
+  <input type="file" id="firmwareFile" />
+  <button id="flashButton" style="display:none;">Upload Firmware</button>
+  <div id="status"></div>
   <pre id="output"></pre>
-  <textarea id="input" placeholder="Type a message..." rows="4" cols="50"></textarea><br>
-  <button id="sendButton">Send Message</button>
 
   <script>
     let port;
     let writer;
     let reader;
-    let inputElement = document.getElementById("input");
-    let outputElement = document.getElementById("output");
     let connectButton = document.getElementById("connectButton");
-    let sendButton = document.getElementById("sendButton");
+    let flashButton = document.getElementById("flashButton");
+    let outputElement = document.getElementById("output");
+    let statusElement = document.getElementById("status");
+    let firmwareFileInput = document.getElementById("firmwareFile");
 
     async function connect() {
       try {
         port = await navigator.serial.requestPort();
         await port.open({ baudRate: 115200 });
+
         const textDecoder = new TextDecoderStream();
         reader = port.readable.pipeTo(textDecoder.writable);
         writer = port.writable.getWriter();
+
         const readerStream = reader.readable.getReader();
         readerStream.read().then(function processData(result) {
-          if (result.done) {
-            return;
-          }
+          if (result.done) return;
           outputElement.textContent += result.value;
           readerStream.read().then(processData);
         });
+
+        flashButton.style.display = 'inline';
+        statusElement.textContent = 'ESP32 Connected';
         connectButton.textContent = 'Disconnect from ESP32';
         connectButton.onclick = disconnect;
       } catch (e) {
         console.error('Error during connection: ', e);
-        outputElement.textContent = "Failed to connect to the ESP32.";
+        statusElement.textContent = "Failed to connect to the ESP32.";
       }
     }
 
@@ -65,20 +84,37 @@
       await writer.close();
       await reader.cancel();
       await port.close();
+      statusElement.textContent = '';
       connectButton.textContent = 'Connect to ESP32';
       connectButton.onclick = connect;
+      flashButton.style.display = 'none';
     }
 
-    async function sendMessage() {
-      const message = inputElement.value;
-      if (message && writer) {
-        writer.write(message + '\n');
-        inputElement.value = '';
+    async function uploadFirmware() {
+      const file = firmwareFileInput.files[0];
+      if (file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const data = new Uint8Array(arrayBuffer);
+
+        try {
+          writer.write("START_FLASHING\n");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          for (let i = 0; i < data.length; i++) {
+            await writer.write(new Uint8Array([data[i]]));
+          }
+          writer.write("END_FLASHING\n");
+          statusElement.textContent = 'Firmware successfully uploaded to ESP32';
+        } catch (e) {
+          console.error('Error uploading firmware:', e);
+          statusElement.textContent = 'Error during firmware upload';
+        }
+      } else {
+        statusElement.textContent = 'Please select a firmware file first.';
       }
     }
 
     connectButton.onclick = connect;
-    sendButton.onclick = sendMessage;
+    flashButton.onclick = uploadFirmware;
   </script>
 </body>
 </html>
