@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 WebSerial Interface</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    pre {
+      text-align: left;
+      background-color: #f0f0f0;
+      padding: 10px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>ESP32 WebSerial Interface</h1>
+  <button id="connectButton">Connect to ESP32</button>
+  <pre id="output"></pre>
+  <textarea id="input" placeholder="Type a message..." rows="4" cols="50"></textarea><br>
+  <button id="sendButton">Send Message</button>
+
+  <script>
+    let port;
+    let writer;
+    let reader;
+    let inputElement = document.getElementById("input");
+    let outputElement = document.getElementById("output");
+    let connectButton = document.getElementById("connectButton");
+    let sendButton = document.getElementById("sendButton");
+
+    async function connect() {
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        const textDecoder = new TextDecoderStream();
+        reader = port.readable.pipeTo(textDecoder.writable);
+        writer = port.writable.getWriter();
+        const readerStream = reader.readable.getReader();
+        readerStream.read().then(function processData(result) {
+          if (result.done) {
+            return;
+          }
+          outputElement.textContent += result.value;
+          readerStream.read().then(processData);
+        });
+        connectButton.textContent = 'Disconnect from ESP32';
+        connectButton.onclick = disconnect;
+      } catch (e) {
+        console.error('Error during connection: ', e);
+        outputElement.textContent = "Failed to connect to the ESP32.";
+      }
+    }
+
+    async function disconnect() {
+      await writer.close();
+      await reader.cancel();
+      await port.close();
+      connectButton.textContent = 'Connect to ESP32';
+      connectButton.onclick = connect;
+    }
+
+    async function sendMessage() {
+      const message = inputElement.value;
+      if (message && writer) {
+        writer.write(message + '\n');
+        inputElement.value = '';
+      }
+    }
+
+    connectButton.onclick = connect;
+    sendButton.onclick = sendMessage;
+  </script>
+</body>
+</html>
